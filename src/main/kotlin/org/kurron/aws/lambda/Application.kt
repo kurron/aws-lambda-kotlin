@@ -1,4 +1,4 @@
-package org.kurron.spring.cloud.aws
+package org.kurron.aws.lambda
 
 fun main(args: Array<String>) {
     println(  "Hello!" )
