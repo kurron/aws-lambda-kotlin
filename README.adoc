@@ -1,0 +1,40 @@
+:toc:
+:toc-placement!:
+
+:note-caption: :information_source:
+:tip-caption: :bulb:
+:important-caption: :heavy_exclamation_mark:
+:warning-caption: :warning:
+:caution-caption: :fire:
+
+= Building AWS applications with Spring Boot and Kotlin
+Ron Kurr <rkurr@jvmguy.com>
+
+
+toc::[]
+
+== Overview
+This project is a sample application that showcases how Spring Boot and Kotlin make a nice mix when using Amazon Web Services.
+
+== Prerequisites
+* https://www.docker.com/[Docker]
+* https://github.com/localstack/localstack[LocalStack]
+
+== Building
+The application can be built via Docker by running `./build.sh`.
+
+== Installation
+
+== Tips and Tricks
+=== Running The Application
+`./run.sh` will start the application as well as the Docker containers simulating AWS services.
+
+== Troubleshooting
+
+== License and Credits
+This project is licensed under the [Apache License Version 2.0, January 2004](http://www.apache.org/licenses/).
+
+== List of Changes
+
+* ./gradlew wrapper --gradle-version 4.8
+* double check that the IDEA project is using JDK 8 and not 10. get weird errors with 10.
