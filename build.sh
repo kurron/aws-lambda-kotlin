@@ -7,11 +7,11 @@ USER_ID=$(id -u $(whoami))
 GROUP_ID=$(id -g $(whoami))
 HOME_DIR=$(cut -d: -f6 < <(getent passwd ${USER_ID}))
 
-CMD="docker run --hostname aws-lambda-kotlin \
+CMD="docker run --hostname aws-lambda-kotlin-build \
                 --group-add ${DOCKER_GROUP_ID} \
                 --env HOME=${HOME_DIR} \
                 --interactive \
-                --name aws-lambda-kotlin \
+                --name aws-lambda-kotlin-build \
                 --rm \
                 --tty \
                 --user=${USER_ID}:${GROUP_ID} \
@@ -22,9 +22,8 @@ CMD="docker run --hostname aws-lambda-kotlin \
                 --workdir $(pwd) \
                 kurron/docker-amazon-jdk-8-build \
 		./gradlew --console=plain \
-                          --no-daemon \
-                          --stacktrace \
-                          clean build"
+                  --no-daemon \
+                  --stacktrace"
 echo $CMD
 $CMD
 
