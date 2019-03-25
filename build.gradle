@@ -1,29 +1,21 @@
 buildscript {
     ext {
         kotlinVersion = "${kotlinVersion}"
-        springBootVersion = "${springBootVersion}"
     }
     repositories {
         mavenCentral()
     }
     dependencies {
-        classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}")
-        classpath("org.jetbrains.kotlin:kotlin-allopen:${kotlinVersion}")
-        classpath("org.jetbrains.kotlin:kotlin-noarg:${kotlinVersion}")
     }
 }
 
 apply plugin: 'kotlin'
-apply plugin: 'kotlin-spring' // makes Spring annotated classes non-final
-apply plugin: 'kotlin-jpa' // generates no-arg constructors for entity classes
-apply plugin: 'kotlin-kapt' // generates metadata for the IDEs
-apply plugin: 'org.springframework.boot'
-apply plugin: 'io.spring.dependency-management'
 
 group = 'org.kurron'
 version = '0.0.1-SNAPSHOT'
 sourceCompatibility = 1.8
+
 compileKotlin {
     kotlinOptions {
         freeCompilerArgs = ["-Xjsr305=strict"]
@@ -43,30 +35,13 @@ repositories {
 
 
 dependencies {
-    compile('org.springframework.boot:spring-boot-starter-data-jpa')
-    compile('org.springframework.boot:spring-boot-starter-mustache')
-    compile('org.springframework.boot:spring-boot-starter-web')
-/*
-    compile("org.springframework.cloud:spring-cloud-aws-autoconfigure:${springCloudtVersion}")
-    compile("org.springframework.cloud:spring-cloud-aws-messaging:${springCloudtVersion}")
-*/
-    compile('com.fasterxml.jackson.module:jackson-module-kotlin')
-    compile("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
-    compile("org.jetbrains.kotlin:kotlin-reflect")
-    compile("com.atlassian.commonmark:commonmark:${commonmarkVersion}")
-    compile("com.atlassian.commonmark:commonmark-ext-autolink:${commonmarkVersion}")
-    runtime('com.h2database:h2')
+    compile("com.fasterxml.jackson.module:jackson-module-kotlin:${jacksonVersion}")
+    compile("org.jetbrains.kotlin:kotlin-stdlib-jdk8:${kotlinVersion}")
+    compile("org.jetbrains.kotlin:kotlin-reflect:${kotlinVersion}")
 
-    // got the proper JUnit dependencies
-    testCompile('org.springframework.boot:spring-boot-starter-test') {
-        exclude module: 'junit'
-    }
-    testImplementation('org.junit.jupiter:junit-jupiter-api')
-    testRuntimeOnly('org.junit.jupiter:junit-jupiter-engine')
+    testImplementation("org.junit.jupiter:junit-jupiter-api:${jupiterVersion}")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:${jupiterVersion}")
     testCompile("com.nhaarman:mockito-kotlin:${mockitoKotlinVersion}")
-
-    // allows IDEs to map the values in the application.properties file to code
-    kapt("org.springframework.boot:spring-boot-configuration-processor")
 }
 
 test {
