@@ -15,6 +15,10 @@ apply plugin: 'kotlin'
 group = 'org.kurron'
 version = '0.0.1-SNAPSHOT'
 sourceCompatibility = 1.8
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+description = """Simple Kotlin Lambda Function"""
 
 compileKotlin {
     kotlinOptions {
@@ -38,10 +42,12 @@ dependencies {
     compile("com.fasterxml.jackson.module:jackson-module-kotlin:${jacksonVersion}")
     compile("org.jetbrains.kotlin:kotlin-stdlib-jdk8:${kotlinVersion}")
     compile("org.jetbrains.kotlin:kotlin-reflect:${kotlinVersion}")
+    compile("com.amazonaws:aws-lambda-java-core:${awsLambdaCoreVersion}")
+    compile("com.amazonaws:aws-lambda-java-events:${awsLambdaEventsVersion}")
 
-    testImplementation("org.junit.jupiter:junit-jupiter-api:${jupiterVersion}")
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:${jupiterVersion}")
+    testCompile("org.junit.jupiter:junit-jupiter-engine:${jupiterVersion}")
     testCompile("com.nhaarman:mockito-kotlin:${mockitoKotlinVersion}")
+    testImplementation("org.junit.jupiter:junit-jupiter-api:${jupiterVersion}")
 }
 
 test {
