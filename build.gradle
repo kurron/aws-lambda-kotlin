@@ -1,4 +1,5 @@
 apply plugin: 'kotlin'
+apply plugin: 'io.spring.dependency-management'
 
 buildscript {
     ext {
@@ -9,6 +10,7 @@ buildscript {
     }
     dependencies {
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}")
+        classpath "io.spring.gradle:dependency-management-plugin:1.0.7.RELEASE"
     }
 }
 
@@ -40,13 +42,20 @@ repositories {
    jcenter()
 }
 
+dependencyManagement {
+    imports {
+        // for the latest version see https://mvnrepository.com/artifact/software.amazon.awssdk/bom
+        mavenBom 'software.amazon.awssdk:bom:2.5.15'
+    }
+}
 
 dependencies {
-    //compile("com.fasterxml.jackson.module:jackson-module-kotlin:${jacksonVersion}")
+    compile("com.fasterxml.jackson.module:jackson-module-kotlin:${jacksonVersion}")
     compile("org.jetbrains.kotlin:kotlin-stdlib-jdk8:${kotlinVersion}")
     //compile("org.jetbrains.kotlin:kotlin-reflect:${kotlinVersion}")
     compile("com.amazonaws:aws-lambda-java-core:${awsLambdaCoreVersion}")
     compile("com.amazonaws:aws-lambda-java-events:${awsLambdaEventsVersion}")
+    compile 'software.amazon.awssdk:s3'
 
     testCompile("org.junit.jupiter:junit-jupiter-engine:${jupiterVersion}")
     testCompile("com.nhaarman:mockito-kotlin:${mockitoKotlinVersion}")
