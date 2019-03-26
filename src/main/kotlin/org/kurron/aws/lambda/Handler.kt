@@ -12,6 +12,9 @@ import software.amazon.awssdk.core.ResponseBytes
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectResponse
+import com.fasterxml.jackson.dataformat.csv.CsvSchema
+
+
 
 /**
  * AWS Lambda entry point.
@@ -19,9 +22,7 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse
 class Handler: RequestHandler<SNSEvent,Unit> {
     override fun handleRequest(input: SNSEvent, context: Context) {
         val jsonMapper = createJsonMapper()
-        val foo = CsvMapper()
-        foo.enable( CsvParser.Feature.SKIP_EMPTY_LINES )
-        foo.enable( CsvParser.Feature.TRIM_SPACES )
+        val (csvMapper, schema) = createCsvMapper()
 
         input.records.forEach { snsRecord ->
             val json = snsRecord.sns.message
@@ -35,8 +36,25 @@ class Handler: RequestHandler<SNSEvent,Unit> {
 
                 val response = downloadFile(bucket, key)
                 context.logger.log("Just download $bucket/$key which was ${response.response().contentLength()} bytes long.")
+                val reader = csvMapper.readerFor(Row::class.java).with(schema)
+                val rows = reader.readValues<Row>( response.asByteArray() )
+                rows.forEach { row ->
+                    context.logger.log( "$row" )
+                }
             }
         }
+    }
+
+    data class CsvResources(val mapper: CsvMapper, val schema: CsvSchema)
+
+    private fun createCsvMapper(): CsvResources {
+        val csvMapper = CsvMapper()
+        csvMapper.enable(CsvParser.Feature.SKIP_EMPTY_LINES)
+        csvMapper.enable(CsvParser.Feature.TRIM_SPACES)
+
+        val schema = CsvSchema.emptySchema().withHeader()
+
+        return CsvResources( csvMapper, schema )
     }
 
     fun downloadFile(bucket: String, key: String): ResponseBytes<GetObjectResponse> {
