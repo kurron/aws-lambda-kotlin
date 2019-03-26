@@ -50,7 +50,9 @@ dependencyManagement {
 }
 
 dependencies {
+    //compile("org.apache.httpcomponents:httpclient:${httpClientVersion}")
     compile("com.fasterxml.jackson.module:jackson-module-kotlin:${jacksonVersion}")
+    compile("com.fasterxml.jackson.dataformat:jackson-dataformat-csv:${jacksonVersion}")
     compile("org.jetbrains.kotlin:kotlin-stdlib-jdk8:${kotlinVersion}")
     //compile("org.jetbrains.kotlin:kotlin-reflect:${kotlinVersion}")
     compile("com.amazonaws:aws-lambda-java-core:${awsLambdaCoreVersion}")
@@ -67,6 +69,9 @@ task buildZip(type: Zip) {
     from processResources
     into('lib') {
         from configurations.compileClasspath
+    }
+    into('lib') {
+        from configurations.runtimeClasspath
     }
 }
 
