@@ -14,6 +14,7 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import com.fasterxml.jackson.dataformat.csv.CsvSchema
 import software.amazon.awssdk.services.sns.SnsClient
 import software.amazon.awssdk.services.sns.model.PublishRequest
+import software.amazon.awssdk.services.sns.model.PublishResponse
 import java.lang.IllegalStateException
 import java.util.*
 
@@ -28,24 +29,29 @@ class Handler: RequestHandler<SNSEvent,Unit> {
         val s3 = S3Client.builder().build()
         val sns = SnsClient.builder().build()
 
+        // TODO: see if using streams instead of loops is more readable and/or efficient
         input.records.forEach { snsRecord ->
             dumpMessageAttributes(snsRecord, context)
 
             val event = toS3Event(snsRecord, context, jsonMapper)
             event.records.forEach { s3Record ->
                 val buffer = downloadFile(s3Record, context, s3)
-
                 val rows = toRows(csvResources, buffer)
                 rows.forEach { row ->
-                    context.logger.log( "$row" )
-                    val message = jsonMapper.writeValueAsString( row )
-                    val topicArn: String = Optional.ofNullable( System.getenv("TOPIC_ARN") ).orElseThrow{ IllegalStateException( "TOPIC_ARN was not provided!" ) }
-                    val request = PublishRequest.builder().topicArn( topicArn ).message( message ).build()
-                    val response = sns.publish( request )
-                    context.logger.log( "SNS message id: ${response.messageId()}" )
+                    publishRecord(jsonMapper, row, sns, context)
                 }
             }
         }
+    }
+
+    private fun publishRecord(jsonMapper: ObjectMapper, row: Row, sns: SnsClient, context: Context): PublishResponse {
+        context.logger.log( "$row" )
+        val message = jsonMapper.writeValueAsString(row)
+        val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
+        val request = PublishRequest.builder().topicArn(topicArn).message(message).build()
+        val response = sns.publish(request)
+        context.logger.log("SNS message id: ${response.messageId()}")
+        return response
     }
 
     private fun toRows(resources: CsvResources, buffer: ByteArray): MappingIterator<Row> {
