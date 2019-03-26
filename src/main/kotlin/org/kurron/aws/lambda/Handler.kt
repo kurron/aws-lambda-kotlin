@@ -5,15 +5,17 @@ import com.amazonaws.services.lambda.runtime.RequestHandler
 import com.amazonaws.services.lambda.runtime.events.SNSEvent
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.databind.MappingIterator
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.dataformat.csv.CsvMapper
 import com.fasterxml.jackson.dataformat.csv.CsvParser
-import software.amazon.awssdk.core.ResponseBytes
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
-import software.amazon.awssdk.services.s3.model.GetObjectResponse
 import com.fasterxml.jackson.dataformat.csv.CsvSchema
-
+import software.amazon.awssdk.services.sns.SnsClient
+import software.amazon.awssdk.services.sns.model.PublishRequest
+import java.lang.IllegalStateException
+import java.util.*
 
 
 /**
@@ -22,27 +24,57 @@ import com.fasterxml.jackson.dataformat.csv.CsvSchema
 class Handler: RequestHandler<SNSEvent,Unit> {
     override fun handleRequest(input: SNSEvent, context: Context) {
         val jsonMapper = createJsonMapper()
-        val (csvMapper, schema) = createCsvMapper()
+        val csvResources = createCsvMapper()
+        val s3 = S3Client.builder().build()
+        val sns = SnsClient.builder().build()
 
         input.records.forEach { snsRecord ->
-            val json = snsRecord.sns.message
-            context.logger.log("message = $json")
-            val event = jsonMapper.readValue<S3Event>( json, object : TypeReference<S3Event>() {})
-            event.records.forEach { s3Record ->
-                val region = s3Record.region
-                val bucket = s3Record.record.bucket.name
-                val key = s3Record.record.data.key
-                context.logger.log( "region = $region, bucket = $bucket, key = $key" )
+            dumpMessageAttributes(snsRecord, context)
 
-                val response = downloadFile(bucket, key)
-                context.logger.log("Just download $bucket/$key which was ${response.response().contentLength()} bytes long.")
-                val reader = csvMapper.readerFor(Row::class.java).with(schema)
-                val rows = reader.readValues<Row>( response.asByteArray() )
+            val event = toS3Event(snsRecord, context, jsonMapper)
+            event.records.forEach { s3Record ->
+                val buffer = downloadFile(s3Record, context, s3)
+
+                val rows = toRows(csvResources, buffer)
                 rows.forEach { row ->
                     context.logger.log( "$row" )
+                    val message = jsonMapper.writeValueAsString( row )
+                    val topicArn: String = Optional.ofNullable( System.getenv("TOPIC_ARN") ).orElseThrow{ IllegalStateException( "TOPIC_ARN was not provided!" ) }
+                    val request = PublishRequest.builder().topicArn( topicArn ).message( message ).build()
+                    val response = sns.publish( request )
+                    context.logger.log( "SNS message id: ${response.messageId()}" )
                 }
             }
         }
+    }
+
+    private fun toRows(resources: CsvResources, buffer: ByteArray): MappingIterator<Row> {
+        val reader = resources.mapper.readerFor(Row::class.java).with(resources.schema)
+        return reader.readValues(buffer)
+    }
+
+    private fun toS3Event(snsRecord: SNSEvent.SNSRecord, context: Context, jsonMapper: ObjectMapper): S3Event {
+        val json = snsRecord.sns.message
+        context.logger.log("message = $json")
+        return jsonMapper.readValue(json, object : TypeReference<S3Event>() {})
+    }
+
+    private fun dumpMessageAttributes(snsRecord: SNSEvent.SNSRecord, context: Context) {
+        snsRecord.sns.messageAttributes.forEach { t, u ->
+            context.logger.log("$t = $u")
+        }
+    }
+
+    private fun downloadFile(s3Record: Record, context: Context, s3: S3Client): ByteArray {
+        val region = s3Record.region
+        val bucket = s3Record.record.bucket.name
+        val key = s3Record.record.data.key
+        context.logger.log("region = $region, bucket = $bucket, key = $key")
+
+        val objectRequest = GetObjectRequest.builder().bucket(bucket).key(key).build()
+        val response = s3.getObjectAsBytes(objectRequest)
+        context.logger.log("Just download $bucket/$key which was ${response.response().contentLength()} bytes long.")
+        return response.asByteArray()
     }
 
     data class CsvResources(val mapper: CsvMapper, val schema: CsvSchema)
@@ -51,17 +83,8 @@ class Handler: RequestHandler<SNSEvent,Unit> {
         val csvMapper = CsvMapper()
         csvMapper.enable(CsvParser.Feature.SKIP_EMPTY_LINES)
         csvMapper.enable(CsvParser.Feature.TRIM_SPACES)
-
         val schema = CsvSchema.emptySchema().withHeader()
-
         return CsvResources( csvMapper, schema )
-    }
-
-    fun downloadFile(bucket: String, key: String): ResponseBytes<GetObjectResponse> {
-        val s3 = S3Client.builder().build()
-        val objectRequest = GetObjectRequest.builder().bucket(bucket).key(key).build()
-        val response = s3.getObjectAsBytes(objectRequest)
-        return response
     }
 
     private fun createJsonMapper(): ObjectMapper {
@@ -72,8 +95,5 @@ class Handler: RequestHandler<SNSEvent,Unit> {
 }
 
 fun main(args : Array<String>) {
-    val foo = Handler()
-    val result = foo.downloadFile( "com-overstock-sns-test", "buyers_pick.csv" )
-    val length = result.response().contentLength()
-    println( "Length is $length")
+    println( "Hello, World! args is ${args.size} long.")
 }

@@ -58,6 +58,7 @@ dependencies {
     compile("com.amazonaws:aws-lambda-java-core:${awsLambdaCoreVersion}")
     compile("com.amazonaws:aws-lambda-java-events:${awsLambdaEventsVersion}")
     compile 'software.amazon.awssdk:s3'
+    compile 'software.amazon.awssdk:sns'
 
     testCompile("org.junit.jupiter:junit-jupiter-engine:${jupiterVersion}")
     testCompile("com.nhaarman:mockito-kotlin:${mockitoKotlinVersion}")
