@@ -10,7 +10,8 @@ import com.amazonaws.services.lambda.runtime.events.SNSEvent
 class Handler: RequestHandler<SNSEvent,Unit> {
     override fun handleRequest(input: SNSEvent, context: Context) {
         input.records.forEach {
-            context.logger.log("message = $it.sns.message")
+            val message = it.sns.message
+            context.logger.log("message = $message")
         }
     }
 }
