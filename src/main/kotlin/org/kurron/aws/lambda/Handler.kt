@@ -15,6 +15,7 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.sns.SnsClient
 import software.amazon.awssdk.services.sns.model.PublishRequest
 import software.amazon.awssdk.services.sns.model.PublishResponse
+import java.io.InputStream
 import java.lang.management.ManagementFactory
 import java.util.*
 
@@ -37,8 +38,9 @@ class Handler: RequestHandler<SNSEvent,Unit> {
 
             val event = toS3Event(snsRecord, context, jsonMapper)
             event.records.forEach { s3Record ->
-                val buffer = downloadFile(s3Record, context, s3)
-                val rows = toRows(csvResources, buffer)
+                val stream = downloadFile(s3Record, context, s3)
+                val rows = toRows(csvResources, stream)
+                // TODO: the iterator will stop iterating if any record contains bad data, like a bad character code. Haven't found a way to change that behavior just yet.
                 rows.forEach { row ->
                     publishRecord(jsonMapper, row, sns, context)
                 }
@@ -64,9 +66,9 @@ class Handler: RequestHandler<SNSEvent,Unit> {
         return response
     }
 
-    private fun toRows(resources: CsvResources, buffer: ByteArray): MappingIterator<SkuProductRow> {
+    private fun toRows(resources: CsvResources, stream: InputStream): MappingIterator<SkuProductRow> {
         val reader = resources.mapper.readerFor(SkuProductRow::class.java).with(resources.schema)
-        return reader.readValues(buffer)
+        return reader.readValues(stream)
     }
 
     private fun toS3Event(snsRecord: SNSEvent.SNSRecord, context: Context, jsonMapper: ObjectMapper): S3Event {
@@ -81,17 +83,16 @@ class Handler: RequestHandler<SNSEvent,Unit> {
         }
     }
 
-    private fun downloadFile(s3Record: Record, context: Context, s3: S3Client): ByteArray {
+    private fun downloadFile(s3Record: Record, context: Context, s3: S3Client): InputStream {
         val region = s3Record.region
         val bucket = s3Record.record.bucket.name
         val key = s3Record.record.data.key
         context.logger.log("Initiating download from S3: region = $region, bucket = $bucket, key = $key")
 
         val objectRequest = GetObjectRequest.builder().bucket(bucket).key(key).build()
-        val response = s3.getObjectAsBytes(objectRequest)
+        val response = s3.getObject(objectRequest)
         context.logger.log("Just download $bucket/$key which was ${response.response().contentLength()} bytes long.")
-        response.asInputStream()
-        return response.asByteArray()
+        return response.buffered()
     }
 
     data class CsvResources(val mapper: CsvMapper, val schema: CsvSchema)
