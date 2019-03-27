@@ -9,13 +9,13 @@ import com.fasterxml.jackson.databind.MappingIterator
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.dataformat.csv.CsvMapper
 import com.fasterxml.jackson.dataformat.csv.CsvParser
+import com.fasterxml.jackson.dataformat.csv.CsvSchema
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
-import com.fasterxml.jackson.dataformat.csv.CsvSchema
 import software.amazon.awssdk.services.sns.SnsClient
 import software.amazon.awssdk.services.sns.model.PublishRequest
 import software.amazon.awssdk.services.sns.model.PublishResponse
-import java.lang.IllegalStateException
+import java.lang.management.ManagementFactory
 import java.util.*
 
 
@@ -24,6 +24,8 @@ import java.util.*
  */
 class Handler: RequestHandler<SNSEvent,Unit> {
     override fun handleRequest(input: SNSEvent, context: Context) {
+        dumpJvmSettings(context)
+
         val jsonMapper = createJsonMapper()
         val csvResources = createCsvMapper()
         val s3 = S3Client.builder().build()
@@ -44,7 +46,15 @@ class Handler: RequestHandler<SNSEvent,Unit> {
         }
     }
 
-    private fun publishRecord(jsonMapper: ObjectMapper, row: Row, sns: SnsClient, context: Context): PublishResponse {
+    private fun dumpJvmSettings(context: Context) {
+        val runtimeMxBean = ManagementFactory.getRuntimeMXBean()
+        val arguments = runtimeMxBean.inputArguments
+        arguments.forEach {
+            context.logger.log(it)
+        }
+    }
+
+    private fun publishRecord(jsonMapper: ObjectMapper, row: SkuProductRow, sns: SnsClient, context: Context): PublishResponse {
         context.logger.log( "$row" )
         val message = jsonMapper.writeValueAsString(row)
         val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
@@ -54,8 +64,8 @@ class Handler: RequestHandler<SNSEvent,Unit> {
         return response
     }
 
-    private fun toRows(resources: CsvResources, buffer: ByteArray): MappingIterator<Row> {
-        val reader = resources.mapper.readerFor(Row::class.java).with(resources.schema)
+    private fun toRows(resources: CsvResources, buffer: ByteArray): MappingIterator<SkuProductRow> {
+        val reader = resources.mapper.readerFor(SkuProductRow::class.java).with(resources.schema)
         return reader.readValues(buffer)
     }
 
@@ -75,11 +85,12 @@ class Handler: RequestHandler<SNSEvent,Unit> {
         val region = s3Record.region
         val bucket = s3Record.record.bucket.name
         val key = s3Record.record.data.key
-        context.logger.log("region = $region, bucket = $bucket, key = $key")
+        context.logger.log("Initiating download from S3: region = $region, bucket = $bucket, key = $key")
 
         val objectRequest = GetObjectRequest.builder().bucket(bucket).key(key).build()
         val response = s3.getObjectAsBytes(objectRequest)
         context.logger.log("Just download $bucket/$key which was ${response.response().contentLength()} bytes long.")
+        response.asInputStream()
         return response.asByteArray()
     }
 
