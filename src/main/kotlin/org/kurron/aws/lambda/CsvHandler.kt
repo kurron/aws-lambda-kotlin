@@ -3,13 +3,14 @@ package org.kurron.aws.lambda
 import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.RequestHandler
 import com.amazonaws.services.lambda.runtime.events.SNSEvent
-import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.MappingIterator
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.dataformat.csv.CsvMapper
 import com.fasterxml.jackson.dataformat.csv.CsvParser
 import com.fasterxml.jackson.dataformat.csv.CsvSchema
+import com.fasterxml.jackson.module.kotlin.KotlinModule
+import com.fasterxml.jackson.module.kotlin.readValue
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.sns.SnsClient
@@ -109,7 +110,7 @@ class CsvHandler: RequestHandler<SNSEvent,Unit> {
     private fun toS3Event(snsRecord: SNSEvent.SNSRecord, context: Context, jsonMapper: ObjectMapper): S3Event {
         val json = snsRecord.sns.message
         context.logger.log("message = $json")
-        return jsonMapper.readValue(json, object : TypeReference<S3Event>() {})
+        return jsonMapper.readValue(json)
     }
 
     private fun dumpMessageAttributes(snsRecord: SNSEvent.SNSRecord, context: Context) {
@@ -141,7 +142,7 @@ class CsvHandler: RequestHandler<SNSEvent,Unit> {
     }
 
     private fun createJsonMapper(): ObjectMapper {
-        val mapper = ObjectMapper()
+        val mapper = ObjectMapper().registerModule(KotlinModule())
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
         return mapper
     }

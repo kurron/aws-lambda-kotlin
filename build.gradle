@@ -57,9 +57,11 @@ dependencies {
     //compile("org.jetbrains.kotlin:kotlin-reflect:${kotlinVersion}")
     compile("com.amazonaws:aws-lambda-java-core:${awsLambdaCoreVersion}")
     compile("com.amazonaws:aws-lambda-java-events:${awsLambdaEventsVersion}")
+    compile("commons-codec:commons-codec:${commonsCodeVersion}")
     compile 'software.amazon.awssdk:s3'
     compile 'software.amazon.awssdk:sns'
     compile 'software.amazon.awssdk:sqs'
+    compile 'software.amazon.awssdk:dynamodb'
 
     testCompile("org.junit.jupiter:junit-jupiter-engine:${jupiterVersion}")
     testCompile("com.nhaarman:mockito-kotlin:${mockitoKotlinVersion}")
