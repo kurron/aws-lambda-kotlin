@@ -14,6 +14,7 @@ data class Data( @JsonProperty("key") val key: String )
 
 data class Row( @JsonProperty("sku") val sku: String, @JsonProperty("status") val status: String, @JsonProperty("force") val force: String)
 
+data class RowHolder( @JsonProperty("rows") val rows: List<Row>)
 
 // "sku_long","sku_short","product_id","option_id","sub_category_id","sub_cat","dept_id","dept","catg_id","store_id","store","category","catid","color","style","image_url","product_url","variant_url"
 data class SkuProductRow( @JsonProperty("sku_long") val skuLong: String,
@@ -34,3 +35,5 @@ data class SkuProductRow( @JsonProperty("sku_long") val skuLong: String,
                           @JsonProperty("image_url") val imageURL: String,
                           @JsonProperty("product_url") val productURL: String,
                           @JsonProperty("variant_url") val variantURL: String)
+
+data class SkuProductRowHolder( @JsonProperty("rows") val rows: List<SkuProductRow>)

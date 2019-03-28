@@ -14,27 +14,35 @@ import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.sns.SnsClient
 import software.amazon.awssdk.services.sns.model.PublishRequest
-import software.amazon.awssdk.services.sns.model.PublishResponse
 import java.io.InputStream
 import java.lang.management.ManagementFactory
 import java.util.*
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 
 /**
  * AWS Lambda entry point.
  */
-class Handler: RequestHandler<SNSEvent,Unit> {
+class CsvHandler: RequestHandler<SNSEvent,Unit> {
     override fun handleRequest(input: SNSEvent, context: Context) {
+        val executor = Executors.newFixedThreadPool(64)
         dumpJvmSettings(context)
 
         val jsonMapper = createJsonMapper()
         val csvResources = createCsvMapper()
         val s3 = S3Client.builder().build()
         val sns = SnsClient.builder().build()
+        val capacity = 256
+        val maximumPayloadSize = 256_000
 
         // TODO: see if using streams instead of loops is more readable and/or efficient
         input.records.forEach { snsRecord ->
             dumpMessageAttributes(snsRecord, context)
+
+            var counter = 0
+            var totalLength = 0
+            var batch = ArrayList<SkuProductRow>(capacity)
 
             val event = toS3Event(snsRecord, context, jsonMapper)
             event.records.forEach { s3Record ->
@@ -42,9 +50,46 @@ class Handler: RequestHandler<SNSEvent,Unit> {
                 val rows = toRows(csvResources, stream)
                 // TODO: the iterator will stop iterating if any record contains bad data, like a bad character code. Haven't found a way to change that behavior just yet.
                 rows.forEach { row ->
-                    publishRecord(jsonMapper, row, sns, context)
+                    // the reason we are stuffing as much as we can into a single message is due to the fact you can easily exceed 15 minutes when publishing millions of messages
+                    val rowLength = jsonMapper.writeValueAsString(row).length
+                    val projectedLength = totalLength + rowLength
+
+                    if ( projectedLength <= maximumPayloadSize) {
+                        batch.add( row )
+                    }
+                    else {
+                        executor.submit { publishMessage(jsonMapper, SkuProductRowHolder( batch ), context, sns) }
+
+                        // reset for the next batch
+                        totalLength = 0
+                        batch = ArrayList(capacity)
+                        batch.add( row )
+                    }
+
+                    totalLength += rowLength
+
+                    if ( 0 == counter++ % 1000 ) {
+                        context.logger.log( "We have processed $counter records")
+                    }
                 }
             }
+        }
+
+        executor.shutdown()
+        context.logger.log( "Awaiting background jobs to complete....")
+        executor.awaitTermination(15, TimeUnit.MINUTES)
+        context.logger.log( "Background jobs completed." )
+    }
+
+    private fun publishMessage(mapper: ObjectMapper, data: SkuProductRowHolder, context: Context, sns: SnsClient) {
+        val message = mapper.writeValueAsString(data)
+        context.logger.log("Submitting a message with : ${message.length} characters")
+        val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
+        val request = PublishRequest.builder().topicArn(topicArn).message(message).build()
+        try {
+            sns.publish(request)
+        } catch (e: Exception) {
+            context.logger.log( "Unable to publish message: ${e.message}" )
         }
     }
 
@@ -54,16 +99,6 @@ class Handler: RequestHandler<SNSEvent,Unit> {
         arguments.forEach {
             context.logger.log(it)
         }
-    }
-
-    private fun publishRecord(jsonMapper: ObjectMapper, row: SkuProductRow, sns: SnsClient, context: Context): PublishResponse {
-        context.logger.log( "$row" )
-        val message = jsonMapper.writeValueAsString(row)
-        val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
-        val request = PublishRequest.builder().topicArn(topicArn).message(message).build()
-        val response = sns.publish(request)
-        context.logger.log("SNS message id: ${response.messageId()}")
-        return response
     }
 
     private fun toRows(resources: CsvResources, stream: InputStream): MappingIterator<SkuProductRow> {
@@ -92,7 +127,7 @@ class Handler: RequestHandler<SNSEvent,Unit> {
         val objectRequest = GetObjectRequest.builder().bucket(bucket).key(key).build()
         val response = s3.getObject(objectRequest)
         context.logger.log("Just download $bucket/$key which was ${response.response().contentLength()} bytes long.")
-        return response.buffered()
+        return response.buffered( 512 * 1024 )
     }
 
     data class CsvResources(val mapper: CsvMapper, val schema: CsvSchema)
