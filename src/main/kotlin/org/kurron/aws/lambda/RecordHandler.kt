@@ -101,16 +101,32 @@ fun main(args : Array<String>) {
     val id = DigestUtils( "SHA-1" ).digestAsHex( json )
     val dynamoDB = DynamoDbClient.builder().endpointOverride( URI( "http://localhost:8000" ) ).build()
     val tableName = Optional.ofNullable(System.getenv("TABLE_NAME")).orElse( "TABLE NOT PROVIDED")
+
+    val upsertRequest = generateUpsertRequest(json, tableName, id)
+    try {
+        val upsertResponse = dynamoDB.updateItem( upsertRequest )
+        println( "DynamoDB says ${upsertResponse.sdkHttpResponse().statusCode()}" )
+        upsertResponse.attributes().orEmpty().entries.forEach { println( "${it.key} = ${it.value.s()}" ) }
+        upsertResponse.attributes()["modified_by"]?.ss()?.forEach{ println( "Modified by $it" ) }
+        val version = upsertResponse.attributes()["version"]?.s()
+
+        // pretend to do some work
+        Thread.sleep( 1000 * 1)
+
+        val updateRequest = generateStatusChangeRequest( version!!, tableName, id )
+        val updateResponse = dynamoDB.updateItem( updateRequest )
+        println( "DynamoDB says ${updateResponse.sdkHttpResponse().statusCode()}" )
+        updateResponse.attributes().orEmpty().entries.forEach { println( "${it.key} = ${it.value.s()}" ) }
+        updateResponse.attributes()["modified_by"]?.ss()?.forEach{ println( "Modified by $it" ) }
+
+    } catch (e: ConditionalCheckFailedException) {
+        println( "Record already exists. Nothing to process.")
+    }
+}
+
+private fun generateUpsertRequest(json: String, tableName: String, id: String ): UpdateItemRequest? {
+    val requestID = UUID.randomUUID().toString()
     val key = hashMapOf( "id" to AttributeValue.builder().s( id ).build() )
-
-/*
-    val request = GetItemRequest.builder().tableName( tableName ).key( key ).build()
-    val getResponse = dynamoDB.getItem( request )
-    println( "DynamoDB says ${getResponse.sdkHttpResponse().statusCode()}" )
-    val exists = !getResponse.item().isEmpty()
-    println( "DynamoDB says $id $exists")
-*/
-
     val version = UUID.randomUUID().toString()
     val updateExpression = """
         SET version = :version, json = :json, progress = :progress
@@ -119,24 +135,37 @@ fun main(args : Array<String>) {
     val conditionExpression = """
         attribute_not_exists(id) OR (NOT progress IN (:initial_state, :completed_state))
     """.trimIndent()
-    val values = mapOf<String,AttributeValue>( ":version" to AttributeValue.builder().s( version ).build(),
-                                                                     ":json" to AttributeValue.builder().s( json ).build(),
-                                                                     ":modified_by" to AttributeValue.builder().ss( version ).build(),
-                                                                     ":initial_state" to AttributeValue.builder().s( "IN_PROGRESS" ).build(),
-                                                                     ":completed_state" to AttributeValue.builder().s( "COMPLETED" ).build(),
-                                                                     ":progress" to AttributeValue.builder().s( "IN_PROGRESS" ).build())
-    val request = UpdateItemRequest.builder().tableName( tableName )
-                                                             .key( key )
-                                                             .updateExpression( updateExpression )
-                                                             .expressionAttributeValues( values )
-                                                             .conditionExpression( conditionExpression )
-                                                             .returnValues( ReturnValue.ALL_NEW ).build()
-    try {
-        val response = dynamoDB.updateItem( request )
-        println( "DynamoDB says ${response.sdkHttpResponse().statusCode()}" )
-        response.attributes().orEmpty().entries.forEach { println( "${it.key} = ${it.value.s()}" ) }
-        response.attributes()["modified_by"]?.ss()?.forEach{ println( "Modified by $it" ) }
-    } catch (e: ConditionalCheckFailedException) {
-        println( "Record already exists. Nothing to process.")
-    }
+    val values = mapOf<String, AttributeValue>(":version" to AttributeValue.builder().s(version).build(),
+            ":json" to AttributeValue.builder().s(json).build(),
+            ":modified_by" to AttributeValue.builder().ss(requestID).build(),
+            ":initial_state" to AttributeValue.builder().s("IN_PROGRESS").build(),
+            ":completed_state" to AttributeValue.builder().s("COMPLETED").build(),
+            ":progress" to AttributeValue.builder().s("IN_PROGRESS").build())
+    return UpdateItemRequest.builder().tableName(tableName)
+                                      .key(key)
+                                      .updateExpression(updateExpression)
+                                      .expressionAttributeValues(values)
+                                      .conditionExpression(conditionExpression)
+                                      .returnValues(ReturnValue.ALL_NEW).build()
+}
+
+private fun generateStatusChangeRequest(version: String, tableName: String, id: String ): UpdateItemRequest {
+    val requestID = UUID.randomUUID().toString()
+    val key = hashMapOf( "id" to AttributeValue.builder().s( id ).build() )
+    val updateExpression = """
+        SET progress = :progress
+        ADD modified_by :modified_by
+    """.trimIndent()
+    val conditionExpression = """
+        version = :version
+    """.trimIndent()
+    val values = mapOf<String, AttributeValue>(":version" to AttributeValue.builder().s(version).build(),
+            ":modified_by" to AttributeValue.builder().ss(requestID).build(),
+            ":progress" to AttributeValue.builder().s("COMPLETED").build())
+    return UpdateItemRequest.builder().tableName(tableName)
+            .key(key)
+            .updateExpression(updateExpression)
+            .expressionAttributeValues(values)
+            .conditionExpression(conditionExpression)
+            .returnValues(ReturnValue.UPDATED_NEW).build()
 }
