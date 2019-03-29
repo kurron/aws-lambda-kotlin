@@ -11,7 +11,9 @@ import org.apache.commons.codec.digest.DigestUtils
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest
 import java.lang.management.ManagementFactory
+import java.net.URI
 import java.util.*
 
 /**
@@ -37,8 +39,20 @@ class RecordHandler: RequestHandler<SQSEvent, Unit> {
                 val id = DigestUtils( "SHA-1" ).digestAsHex( jsonForm )
                 val dynamoDB = DynamoDbClient.builder().build()
                 val tableName = Optional.ofNullable(System.getenv("TABLE_NAME")).orElse( "TABLE NOT PROVIDED")
-                val getResponse = dynamoDB.getItem( GetItemRequest.builder().tableName( tableName ).key( hashMapOf( "id" to AttributeValue.builder().s( id ).build() ) ).build() )
+                val key = hashMapOf( "id" to AttributeValue.builder().s( id ).build() )
+                val request = GetItemRequest.builder().tableName( tableName ).key( key ).build()
+                val getResponse = dynamoDB.getItem( request )
                 context.logger.log( "DynamoDB says ${getResponse.sdkHttpResponse().statusCode()}")
+                val exists = getResponse.item()  != null
+                context.logger.log( "DynamoDB says $id exists: $exists")
+                if ( exists ) {
+                    context.logger.log( "$id has previously been processed. Nothing to do.")
+                }
+                else {
+                    // haven't seen it before
+                    // update the system
+                    // save the record as being seen
+                }
 
                 //val item = hashMapOf( "json" to AttributeValue.builder().s( jsonForm ).build() )
                 //val putResponse = dynamoDB.putItem( PutItemRequest.builder().tableName( tableName ).item( item ).build() )
@@ -56,9 +70,55 @@ class RecordHandler: RequestHandler<SQSEvent, Unit> {
         }
     }
 
-    private fun createJsonMapper(): ObjectMapper {
+    fun createJsonMapper(): ObjectMapper {
         val mapper = ObjectMapper().registerModule(KotlinModule())
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
         return mapper
     }
+}
+
+fun main(args : Array<String>) {
+    println( "Hello, World! args is ${args.size} long.")
+    var handler = RecordHandler()
+    var mapper = handler.createJsonMapper()
+    var from = SkuProductRow( skuLong = "alpha",
+            skuShort = "bravo",
+            productID = "charlie",
+            optionID = "delta",
+            subCategoryID = "echo",
+            subCategory = "foxtrot",
+            departmentID = "gulf",
+            department = "hotel",
+            catalogID = "indigo",
+            storeID = "juliette",
+            store = "kilo",
+            category = "lima",
+            categoryID = "mike",
+            color = "november",
+            style = "oscar",
+            imageURL = "papa",
+            productURL = "quebec",
+            variantURL = "romeo")
+    val json = mapper.writeValueAsString( from )
+    val id = DigestUtils( "SHA-1" ).digestAsHex( json )
+    val dynamoDB = DynamoDbClient.builder().endpointOverride( URI( "http://localhost:8000" ) ).build()
+    val tableName = Optional.ofNullable(System.getenv("TABLE_NAME")).orElse( "TABLE NOT PROVIDED")
+    val key = hashMapOf( "id" to AttributeValue.builder().s( id ).build() )
+
+/*
+    val request = GetItemRequest.builder().tableName( tableName ).key( key ).build()
+    val getResponse = dynamoDB.getItem( request )
+    println( "DynamoDB says ${getResponse.sdkHttpResponse().statusCode()}" )
+    val exists = !getResponse.item().isEmpty()
+    println( "DynamoDB says $id $exists")
+*/
+
+    val version = UUID.randomUUID().toString()
+    val updateExpression = """
+        SET version=:version
+    """.trimIndent()
+    val values = mapOf<String,AttributeValue>( ":version" to AttributeValue.builder().s( version ).build() )
+    val request = UpdateItemRequest.builder().tableName( tableName ).key( key ).updateExpression( updateExpression ).expressionAttributeValues( values ).build()
+    val response = dynamoDB.updateItem( request )
+    println( "DynamoDB says ${response.sdkHttpResponse().statusCode()}" )
 }
