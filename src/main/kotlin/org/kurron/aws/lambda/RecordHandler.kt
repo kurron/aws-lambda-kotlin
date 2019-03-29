@@ -11,6 +11,7 @@ import org.apache.commons.codec.digest.DigestUtils
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest
+import software.amazon.awssdk.services.dynamodb.model.ReturnValue
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest
 import java.lang.management.ManagementFactory
 import java.net.URI
@@ -118,7 +119,8 @@ fun main(args : Array<String>) {
         SET version=:version
     """.trimIndent()
     val values = mapOf<String,AttributeValue>( ":version" to AttributeValue.builder().s( version ).build() )
-    val request = UpdateItemRequest.builder().tableName( tableName ).key( key ).updateExpression( updateExpression ).expressionAttributeValues( values ).build()
+    val request = UpdateItemRequest.builder().tableName( tableName ).key( key ).updateExpression( updateExpression ).expressionAttributeValues( values ).returnValues( ReturnValue.ALL_NEW ).build()
     val response = dynamoDB.updateItem( request )
     println( "DynamoDB says ${response.sdkHttpResponse().statusCode()}" )
+    response.attributes().orEmpty().entries.forEach { println( "${it.key} = ${it.value.s()}" ) }
 }
