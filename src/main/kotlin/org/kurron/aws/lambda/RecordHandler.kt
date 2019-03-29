@@ -9,10 +9,7 @@ import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.apache.commons.codec.digest.DigestUtils
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue
-import software.amazon.awssdk.services.dynamodb.model.GetItemRequest
-import software.amazon.awssdk.services.dynamodb.model.ReturnValue
-import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest
+import software.amazon.awssdk.services.dynamodb.model.*
 import java.lang.management.ManagementFactory
 import java.net.URI
 import java.util.*
@@ -116,11 +113,30 @@ fun main(args : Array<String>) {
 
     val version = UUID.randomUUID().toString()
     val updateExpression = """
-        SET version=:version
+        SET version = :version, json = :json, progress = :progress
+        ADD modified_by :modified_by
     """.trimIndent()
-    val values = mapOf<String,AttributeValue>( ":version" to AttributeValue.builder().s( version ).build() )
-    val request = UpdateItemRequest.builder().tableName( tableName ).key( key ).updateExpression( updateExpression ).expressionAttributeValues( values ).returnValues( ReturnValue.ALL_NEW ).build()
-    val response = dynamoDB.updateItem( request )
-    println( "DynamoDB says ${response.sdkHttpResponse().statusCode()}" )
-    response.attributes().orEmpty().entries.forEach { println( "${it.key} = ${it.value.s()}" ) }
+    val conditionExpression = """
+        attribute_not_exists(id) OR (NOT progress IN (:initial_state, :completed_state))
+    """.trimIndent()
+    val values = mapOf<String,AttributeValue>( ":version" to AttributeValue.builder().s( version ).build(),
+                                                                     ":json" to AttributeValue.builder().s( json ).build(),
+                                                                     ":modified_by" to AttributeValue.builder().ss( version ).build(),
+                                                                     ":initial_state" to AttributeValue.builder().s( "IN_PROGRESS" ).build(),
+                                                                     ":completed_state" to AttributeValue.builder().s( "COMPLETED" ).build(),
+                                                                     ":progress" to AttributeValue.builder().s( "IN_PROGRESS" ).build())
+    val request = UpdateItemRequest.builder().tableName( tableName )
+                                                             .key( key )
+                                                             .updateExpression( updateExpression )
+                                                             .expressionAttributeValues( values )
+                                                             .conditionExpression( conditionExpression )
+                                                             .returnValues( ReturnValue.ALL_NEW ).build()
+    try {
+        val response = dynamoDB.updateItem( request )
+        println( "DynamoDB says ${response.sdkHttpResponse().statusCode()}" )
+        response.attributes().orEmpty().entries.forEach { println( "${it.key} = ${it.value.s()}" ) }
+        response.attributes()["modified_by"]?.ss()?.forEach{ println( "Modified by $it" ) }
+    } catch (e: ConditionalCheckFailedException) {
+        println( "Record already exists. Nothing to process.")
+    }
 }
