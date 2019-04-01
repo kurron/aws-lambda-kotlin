@@ -80,10 +80,6 @@ class RecordHandler: RequestHandler<SQSEvent, Unit> {
             context.logger.log( "Record $id already exists. Nothing to process.")
             ""
         }
-        catch ( e: Exception ) {
-            context.logger.log( "Issue processing record $id: ${e.message}")
-            ""
-        }
     }
 
     private fun dumpJvmSettings(context: Context) {
