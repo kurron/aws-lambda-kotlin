@@ -107,7 +107,7 @@ class CsvHandler: RequestHandler<SNSEvent,Unit> {
         return reader.readValues(stream)
     }
 
-    private fun toS3Event(snsRecord: SNSEvent.SNSRecord, context: Context, jsonMapper: ObjectMapper): S3Event {
+    private fun toS3Event(snsRecord: SNSEvent.SNSRecord, context: Context, jsonMapper: ObjectMapper): S3Message {
         val json = snsRecord.sns.message
         context.logger.log("message = $json")
         return jsonMapper.readValue(json)
