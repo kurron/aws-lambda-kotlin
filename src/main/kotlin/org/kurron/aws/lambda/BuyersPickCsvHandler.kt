@@ -36,8 +36,7 @@ class BuyersPickCsvHandler: RequestHandler<SNSEvent, Unit> {
         dumpJvmSettings(context)
 
         input.records.forEach { record ->
-            val event = jsonMapper.readValue<S3ChangeEvent>( record.sns.message )
-            context.logger.log( "Just heard $event")
+            val event = toChangeEvent(record, context)
 
             var counter = 0
             var totalLength = 0
@@ -75,6 +74,12 @@ class BuyersPickCsvHandler: RequestHandler<SNSEvent, Unit> {
             }
             context.logger.log( "Processing completed.")
         }
+    }
+
+    private fun toChangeEvent(record: SNSEvent.SNSRecord, context: Context): S3ChangeEvent {
+        val event = jsonMapper.readValue<S3ChangeEvent>(record.sns.message)
+        context.logger.log("Just heard $event")
+        return event
     }
 
     private fun publishMessage(mapper: ObjectMapper, data: BuyersPickRowHolder, context: Context, sns: SnsClient, routingKey: String) {

@@ -14,80 +14,83 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.sns.SnsClient
+import software.amazon.awssdk.services.sns.model.MessageAttributeValue
 import software.amazon.awssdk.services.sns.model.PublishRequest
 import java.io.InputStream
 import java.lang.management.ManagementFactory
 import java.util.*
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-
 
 /**
  * AWS Lambda entry point.
  */
 class SkuProductCsvHandler: RequestHandler<SNSEvent,Unit> {
-    private val executor = Executors.newFixedThreadPool(64)
     private val jsonMapper = createJsonMapper()
     private val csvResources = createCsvMapper()
     private val s3 = S3Client.builder().build()
     private val sns = SnsClient.builder().build()
     private val capacity = 256
     private val maximumPayloadSize = 256_000
+    private val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
 
     override fun handleRequest(input: SNSEvent, context: Context) {
         dumpJvmSettings(context)
-
-
-        // TODO: see if using streams instead of loops is more readable and/or efficient
-        input.records.forEach { snsRecord ->
-            dumpMessageAttributes(snsRecord, context)
+        input.records.forEach { record ->
+            dumpMessageAttributes(record, context)
+            val event = toChangeEvent(record, context)
 
             var counter = 0
             var totalLength = 0
             var batch = ArrayList<SkuProductRow>(capacity)
 
-            val event = toS3Event(snsRecord, context, jsonMapper)
-            event.records.forEach { s3Record ->
-                val stream = downloadFile(s3Record, context, s3)
-                val rows = toRows(csvResources, stream)
-                // TODO: the iterator will stop iterating if any record contains bad data, like a bad character code. Haven't found a way to change that behavior just yet.
-                rows.forEach { row ->
-                    // the reason we are stuffing as much as we can into a single message is due to the fact you can easily exceed 15 minutes when publishing millions of messages
-                    val rowLength = jsonMapper.writeValueAsString(row).length
-                    val projectedLength = totalLength + rowLength
+            val stream = downloadFile(event, context, s3)
+            val rows = toRows(csvResources, stream)
+            // TODO: the iterator will stop iterating if any record contains bad data, like a bad character code. Haven't found a way to change that behavior just yet.
+            rows.forEach { row ->
+                // the reason we are stuffing as much as we can into a single message is due to the fact you can easily exceed 15 minutes when publishing millions of messages
+                val rowLength = jsonMapper.writeValueAsString(row).length
+                val projectedLength = totalLength + rowLength
 
-                    if ( projectedLength <= maximumPayloadSize) {
-                        batch.add( row )
-                    }
-                    else {
-                        executor.submit { publishMessage(jsonMapper, SkuProductRowHolder( batch ), context, sns) }
+                if ( projectedLength <= maximumPayloadSize) {
+                    batch.add( row )
+                }
+                else {
+                    publishMessage(jsonMapper, SkuProductRowHolder(batch), context, sns, event.key)
 
-                        // reset for the next batch
-                        totalLength = 0
-                        batch = ArrayList(capacity)
-                        batch.add( row )
-                    }
+                    // reset for the next batch
+                    totalLength = 0
+                    batch = ArrayList(capacity)
+                    batch.add( row )
+                }
 
-                    totalLength += rowLength
+                totalLength += rowLength
 
-                    if ( 0 == counter++ % 1000 ) {
-                        context.logger.log( "We have processed $counter records")
-                    }
+                if ( 0 == counter++ % 1000 ) {
+                    context.logger.log( "We have processed $counter records")
                 }
             }
+            // in case the records are so small we never hit the maximum size and trigger a publish
+            if ( batch.isNotEmpty() ) {
+                publishMessage(jsonMapper, SkuProductRowHolder(batch), context, sns, event.key)
+            }
+            context.logger.log( "Processing completed.")
         }
-
-        executor.shutdown()
-        context.logger.log( "Awaiting background jobs to complete....")
-        executor.awaitTermination(15, TimeUnit.MINUTES)
-        context.logger.log( "Background jobs completed." )
     }
 
-    private fun publishMessage(mapper: ObjectMapper, data: SkuProductRowHolder, context: Context, sns: SnsClient) {
+    private fun toChangeEvent(record: SNSEvent.SNSRecord, context: Context): S3ChangeEvent {
+        val event = jsonMapper.readValue<S3ChangeEvent>(record.sns.message)
+        context.logger.log("Just heard $event")
+        return event
+    }
+
+    private fun publishMessage(mapper: ObjectMapper, data: SkuProductRowHolder, context: Context, sns: SnsClient, routingKey: String ) {
+        val value = MessageAttributeValue.builder().dataType("String").stringValue(routingKey).build()
         val message = mapper.writeValueAsString(data)
         context.logger.log("Submitting a message with : ${message.length} characters")
-        val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
-        val request = PublishRequest.builder().topicArn(topicArn).message(message).build()
+        val request = PublishRequest.builder()
+                                                 .topicArn(topicArn)
+                                                 .message(message)
+                                                 .messageAttributes(hashMapOf("routing-key" to value))
+                                                 .build()
         try {
             val response = sns.publish(request)
             assert( response.sdkHttpResponse().isSuccessful )
@@ -109,22 +112,16 @@ class SkuProductCsvHandler: RequestHandler<SNSEvent,Unit> {
         return reader.readValues(stream)
     }
 
-    private fun toS3Event(snsRecord: SNSEvent.SNSRecord, context: Context, jsonMapper: ObjectMapper): S3Message {
-        val json = snsRecord.sns.message
-        context.logger.log("message = $json")
-        return jsonMapper.readValue(json)
-    }
-
     private fun dumpMessageAttributes(snsRecord: SNSEvent.SNSRecord, context: Context) {
         snsRecord.sns.messageAttributes.forEach { t, u ->
             context.logger.log("$t = $u")
         }
     }
 
-    private fun downloadFile(s3Record: Record, context: Context, s3: S3Client): InputStream {
-        val region = s3Record.region
-        val bucket = s3Record.record.bucket.name
-        val key = s3Record.record.data.key
+    private fun downloadFile(event: S3ChangeEvent, context: Context, s3: S3Client): InputStream {
+        val region = event.region
+        val bucket = event.bucket
+        val key = event.key
         context.logger.log("Initiating download from S3: region = $region, bucket = $bucket, key = $key")
 
         val objectRequest = GetObjectRequest.builder().bucket(bucket).key(key).build()
