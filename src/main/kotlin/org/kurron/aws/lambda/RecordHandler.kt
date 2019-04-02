@@ -17,16 +17,16 @@ import java.lang.management.ManagementFactory
 import java.util.*
 
 /**
- * AWS Lambda entry point.
+ * AWS Lambda that processes command messages by integrating with an external system and tracking the processing in DynamoDB.
  */
 class RecordHandler: RequestHandler<SQSEvent, Unit> {
     private val jsonMapper = createJsonMapper()
+    private val dynamoDB = DynamoDbClient.builder().build()
+    private val tableName = Optional.ofNullable(System.getenv("TABLE_NAME")).orElse( "TABLE NOT PROVIDED")
 
     override fun handleRequest(input: SQSEvent, context: Context) {
         dumpJvmSettings(context)
 
-        val dynamoDB = DynamoDbClient.builder().build()
-        val tableName = Optional.ofNullable(System.getenv("TABLE_NAME")).orElse( "TABLE NOT PROVIDED")
 
         // TODO: see if using streams instead of loops is more readable and/or efficient
         input.records.forEach { sqsRecord ->
@@ -71,7 +71,7 @@ class RecordHandler: RequestHandler<SQSEvent, Unit> {
         val request = generateUpsertRequest(rowAsJson, tableName, id)
         return try {
             val response = dynamoDB.updateItem( request )
-            // TODO: honestly, if version is missing then something is very wrong
+            // TODO: honestly, if version is missing then something is very, very wrong
             val version = response.attributes()["version"]?.s().orEmpty()
             context.logger.log( "Loaded record $id, returning version $version")
             version

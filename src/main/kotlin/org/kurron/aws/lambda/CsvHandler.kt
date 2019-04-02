@@ -26,16 +26,17 @@ import java.util.concurrent.TimeUnit
  * AWS Lambda entry point.
  */
 class CsvHandler: RequestHandler<SNSEvent,Unit> {
+    private val executor = Executors.newFixedThreadPool(64)
+    private val jsonMapper = createJsonMapper()
+    private val csvResources = createCsvMapper()
+    private val s3 = S3Client.builder().build()
+    private val sns = SnsClient.builder().build()
+    private val capacity = 256
+    private val maximumPayloadSize = 256_000
+
     override fun handleRequest(input: SNSEvent, context: Context) {
-        val executor = Executors.newFixedThreadPool(64)
         dumpJvmSettings(context)
 
-        val jsonMapper = createJsonMapper()
-        val csvResources = createCsvMapper()
-        val s3 = S3Client.builder().build()
-        val sns = SnsClient.builder().build()
-        val capacity = 256
-        val maximumPayloadSize = 256_000
 
         // TODO: see if using streams instead of loops is more readable and/or efficient
         input.records.forEach { snsRecord ->
