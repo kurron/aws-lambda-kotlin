@@ -12,10 +12,6 @@ data class Bucket( @JsonProperty("name") val name: String )
 
 data class Data( @JsonProperty("key") val key: String )
 
-data class Row( @JsonProperty("sku") val sku: String, @JsonProperty("status") val status: String, @JsonProperty("force") val force: String)
-
-data class RowHolder( @JsonProperty("rows") val rows: List<Row>)
-
 data class SkuProductRow( @JsonProperty("sku_long")        val skuLong: String,
                           @JsonProperty("sku_short")       val skuShort: String,
                           @JsonProperty("product_id")      val productID: String,
@@ -40,3 +36,9 @@ data class SkuProductRowHolder( @JsonProperty("rows") val rows: List<SkuProductR
 data class S3ChangeEvent( @JsonProperty("region") val region: String,
                           @JsonProperty("bucket") val bucket: String,
                           @JsonProperty("key") val key: String)
+
+data class BuyersPickRow( @JsonProperty("sku") val sku: String,
+                          @JsonProperty("status") val status: String,
+                          @JsonProperty("force") val force: String)
+
+data class BuyersPickRowHolder( @JsonProperty("rows") val rows: List<BuyersPickRow> )

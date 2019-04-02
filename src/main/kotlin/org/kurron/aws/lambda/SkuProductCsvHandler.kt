@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit
 /**
  * AWS Lambda entry point.
  */
-class CsvHandler: RequestHandler<SNSEvent,Unit> {
+class SkuProductCsvHandler: RequestHandler<SNSEvent,Unit> {
     private val executor = Executors.newFixedThreadPool(64)
     private val jsonMapper = createJsonMapper()
     private val csvResources = createCsvMapper()
@@ -89,7 +89,8 @@ class CsvHandler: RequestHandler<SNSEvent,Unit> {
         val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
         val request = PublishRequest.builder().topicArn(topicArn).message(message).build()
         try {
-            sns.publish(request)
+            val response = sns.publish(request)
+            assert( response.sdkHttpResponse().isSuccessful )
         } catch (e: Exception) {
             context.logger.log( "Unable to publish message: ${e.message}" )
         }
