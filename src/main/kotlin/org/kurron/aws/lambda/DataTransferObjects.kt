@@ -36,3 +36,7 @@ data class SkuProductRow( @JsonProperty("sku_long")        val skuLong: String,
                           @JsonProperty("variant_url")     val variantURL: String)
 
 data class SkuProductRowHolder( @JsonProperty("rows") val rows: List<SkuProductRow>)
+
+data class S3ChangeEvent( @JsonProperty("region") val region: String,
+                          @JsonProperty("bucket") val bucket: String,
+                          @JsonProperty("key") val key: String)

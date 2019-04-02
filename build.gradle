@@ -63,6 +63,9 @@ dependencies {
     compile 'software.amazon.awssdk:sqs'
     compile 'software.amazon.awssdk:dynamodb'
 
+    // need this because the dependency from aws-lambda-java-events isn't described in the POM
+    compile "com.amazonaws:aws-java-sdk-s3:${s3Version}"
+
     testCompile("org.junit.jupiter:junit-jupiter-engine:${jupiterVersion}")
     testCompile("com.nhaarman:mockito-kotlin:${mockitoKotlinVersion}")
     testImplementation("org.junit.jupiter:junit-jupiter-api:${jupiterVersion}")

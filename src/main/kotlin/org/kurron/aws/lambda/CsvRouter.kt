@@ -1,14 +1,12 @@
 package org.kurron.aws.lambda
 
-import com.amazonaws.services.lambda.runtime.Context
-import com.amazonaws.services.lambda.runtime.RequestHandler
+import com.amazonaws.services.lambda.runtime.*
 import com.amazonaws.services.lambda.runtime.events.S3Event
-import com.amazonaws.services.lambda.runtime.events.SNSEvent
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
-import com.fasterxml.jackson.module.kotlin.readValue
 import software.amazon.awssdk.services.sns.SnsClient
+import software.amazon.awssdk.services.sns.model.MessageAttributeValue
 import software.amazon.awssdk.services.sns.model.PublishRequest
 import java.lang.management.ManagementFactory
 import java.util.*
@@ -20,21 +18,24 @@ class CsvRouter: RequestHandler<S3Event, Unit> {
     override fun handleRequest(input: S3Event, context: Context) {
         dumpJvmSettings(context)
 
-        val jsonMapper = createJsonMapper()
+        val mapper = createJsonMapper()
         val sns = SnsClient.builder().build()
 
-        context.logger.log( "message: ${input}")
-    }
-
-    private fun publishMessage(mapper: ObjectMapper, data: SkuProductRowHolder, context: Context, sns: SnsClient) {
-        val message = mapper.writeValueAsString(data)
-        context.logger.log("Submitting a message with : ${message.length} characters")
-        val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
-        val request = PublishRequest.builder().topicArn(topicArn).message(message).build()
-        try {
+        input.records.forEach { record ->
+            val routingKey = "${record.awsRegion}/${record.s3.bucket.name}/${record.s3.`object`.key}"
+            context.logger.log( "Processing change event with ${record.awsRegion}/${record.s3.bucket.name}/${record.s3.`object`.key}")
+            val event = S3ChangeEvent( region = record.awsRegion, bucket = record.s3.bucket.name, key = record.s3.`object`.key )
+            val message = mapper.writeValueAsString(event)
+            val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN"))
+                                           .orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
+            val value = MessageAttributeValue.builder().dataType("String").stringValue(record.s3.`object`.key).build()
+            val request = PublishRequest.builder()
+                                                     .topicArn(topicArn)
+                                                     .message(message)
+                                                     .messageAttributes(hashMapOf( "routing-key" to value ))
+                                                     .build()
             sns.publish(request)
-        } catch (e: Exception) {
-            context.logger.log( "Unable to publish message: ${e.message}" )
+            context.logger.log( "$routingKey event sent to SNS $topicArn")
         }
     }
 
@@ -46,15 +47,13 @@ class CsvRouter: RequestHandler<S3Event, Unit> {
         }
     }
 
-    private fun toS3Event(snsRecord: SNSEvent.SNSRecord, context: Context, jsonMapper: ObjectMapper): S3Message {
-        val json = snsRecord.sns.message
-        context.logger.log("message = $json")
-        return jsonMapper.readValue(json)
-    }
-
     private fun createJsonMapper(): ObjectMapper {
         val mapper = ObjectMapper().registerModule(KotlinModule())
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
         return mapper
     }
+}
+
+fun main(args : Array<String>) {
+    println( "Hello, World! args is ${args.size} long.")
 }
