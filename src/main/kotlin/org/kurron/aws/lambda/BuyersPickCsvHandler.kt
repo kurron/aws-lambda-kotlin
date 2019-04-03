@@ -21,7 +21,7 @@ import java.lang.management.ManagementFactory
 import java.util.*
 
 /**
- * This Lambda's job is to transform the buyer's pick CSV records into individual JSON events that can processed downstream.
+ * Parses the CSV file written in the bravo format, transforming the records into JSON messages published to an SNS Topic.
  */
 class BuyersPickCsvHandler: RequestHandler<SNSEvent, Unit> {
     private val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }

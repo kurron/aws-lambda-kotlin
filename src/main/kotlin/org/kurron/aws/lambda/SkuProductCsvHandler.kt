@@ -21,7 +21,7 @@ import java.lang.management.ManagementFactory
 import java.util.*
 
 /**
- * AWS Lambda entry point.
+ * Parses the CSV file written in the alpha format, transforming the records into JSON messages published to an SNS Topic.
  */
 class SkuProductCsvHandler: RequestHandler<SNSEvent,Unit> {
     private val jsonMapper = createJsonMapper()

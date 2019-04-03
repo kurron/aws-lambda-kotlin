@@ -17,9 +17,9 @@ import java.lang.management.ManagementFactory
 import java.util.*
 
 /**
- * AWS Lambda that processes command messages by integrating with an external system and tracking the processing in DynamoDB.
+ * Processes command messages by integrating with an external system and tracking the processing in DynamoDB.
  */
-class RecordHandler: RequestHandler<SQSEvent, Unit> {
+class AlphaCommandHandler: RequestHandler<SQSEvent, Unit> {
     private val jsonMapper = createJsonMapper()
     private val dynamoDB = DynamoDbClient.builder().build()
     private val tableName = Optional.ofNullable(System.getenv("TABLE_NAME")).orElse( "TABLE NOT PROVIDED")
@@ -147,7 +147,7 @@ fun main(args : Array<String>) {
     println( "Hello, World! args is ${args.size} long.")
 /*
 
-    var handler = RecordHandler()
+    var handler = AlphaCommandHandler()
     var mapper = handler.createJsonMapper()
     var from = SkuProductRow( skuLong = "alpha",
             skuShort = "bravo",
