@@ -14,9 +14,9 @@ import java.lang.management.ManagementFactory
 import java.util.*
 
 /**
- * Decomposes a batch of Alpha messages into individual messages.
+ * Decomposes a batch of Bravo messages into individual messages.
  */
-class AlphaBatchHandler: RequestHandler<SQSEvent, Unit> {
+class BravoBatchHandler: RequestHandler<SQSEvent, Unit> {
     private val mapper = createJsonMapper()
     private val sns = SnsClient.builder().build()
     private val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
@@ -28,7 +28,7 @@ class AlphaBatchHandler: RequestHandler<SQSEvent, Unit> {
         input.records.forEach { sqsRecord ->
             context.logger.log( "Processing ${sqsRecord.body}")
             val routingKey = sqsRecord.messageAttributes.get("routing-key")?.stringValue ?: "routing key not provided"
-            val holder = mapper.readValue<SkuProductRowHolder>(sqsRecord.body)
+            val holder = mapper.readValue<BuyersPickRowHolder>(sqsRecord.body)
             holder.rows.forEach{ row ->
                 val request = createRequest(row, mapper, topicArn, routingKey)
                 val response = sns.publish(request)
@@ -39,7 +39,7 @@ class AlphaBatchHandler: RequestHandler<SQSEvent, Unit> {
         context.logger.log( "Processing complete.")
     }
 
-    private fun createRequest(row: SkuProductRow, mapper: ObjectMapper, topicArn: String, routingKey: String): PublishRequest {
+    private fun createRequest(row: BuyersPickRow, mapper: ObjectMapper, topicArn: String, routingKey: String): PublishRequest {
         val message = mapper.writeValueAsString(row)
         val value = MessageAttributeValue.builder().dataType("String").stringValue(routingKey).build()
         return PublishRequest.builder()
