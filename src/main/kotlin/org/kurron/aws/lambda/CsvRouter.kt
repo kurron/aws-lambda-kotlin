@@ -18,12 +18,10 @@ import java.util.*
 class CsvRouter: RequestHandler<S3Event, Unit> {
     private val mapper = createJsonMapper()
     private val sns = SnsClient.builder().build()
+    private val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
 
     override fun handleRequest(input: S3Event, context: Context) {
         dumpJvmSettings(context)
-
-        val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN"))
-                                       .orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
 
         input.records.forEach { record ->
             val routingKey = "${record.awsRegion}/${record.s3.bucket.name}/${record.s3.`object`.key}"
