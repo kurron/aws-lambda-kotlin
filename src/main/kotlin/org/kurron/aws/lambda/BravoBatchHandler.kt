@@ -18,8 +18,8 @@ import java.util.*
  */
 class BravoBatchHandler: RequestHandler<SQSEvent, Unit> {
     private val mapper = createJsonMapper()
-    private val sns = SnsClient.builder().build()
-    private val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
+    private val sns = snsClient()
+    private val topicArn: String = loadEnvironmentVariable( "TOPIC_ARN" )
 
     override fun handleRequest(input: SQSEvent, context: Context) {
         dumpJvmSettings(context)
@@ -30,7 +30,7 @@ class BravoBatchHandler: RequestHandler<SQSEvent, Unit> {
             val routingKey = sqsRecord.messageAttributes.get("routing-key")?.stringValue ?: "routing key not provided"
             val holder = mapper.readValue<BuyersPickRowHolder>(sqsRecord.body)
             holder.rows.forEach{ row ->
-                val request = createRequest(row, mapper, topicArn, routingKey)
+                val request = createPublishRequest(row, mapper, topicArn, routingKey)
                 val response = sns.publish(request)
                 assert( response.sdkHttpResponse().isSuccessful )
                 context.logger.log( "${response.messageId()} event sent to SNS $topicArn")
@@ -39,27 +39,4 @@ class BravoBatchHandler: RequestHandler<SQSEvent, Unit> {
         context.logger.log( "Processing complete.")
     }
 
-    private fun createRequest(row: BuyersPickRow, mapper: ObjectMapper, topicArn: String, routingKey: String): PublishRequest {
-        val message = mapper.writeValueAsString(row)
-        val value = MessageAttributeValue.builder().dataType("String").stringValue(routingKey).build()
-        return PublishRequest.builder()
-                             .topicArn(topicArn)
-                             .message(message)
-                             .messageAttributes(hashMapOf("routing-key" to value))
-                             .build()
-    }
-
-    private fun dumpJvmSettings(context: Context) {
-        val runtimeMxBean = ManagementFactory.getRuntimeMXBean()
-        val arguments = runtimeMxBean.inputArguments
-        arguments.forEach {
-            context.logger.log(it)
-        }
-    }
-
-    private fun createJsonMapper(): ObjectMapper {
-        val mapper = ObjectMapper().registerModule(KotlinModule())
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-        return mapper
-    }
 }

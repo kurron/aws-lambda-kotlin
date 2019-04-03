@@ -3,21 +3,12 @@ package org.kurron.aws.lambda
 import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.RequestHandler
 import com.amazonaws.services.lambda.runtime.events.SNSEvent
-import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.MappingIterator
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.dataformat.csv.CsvMapper
-import com.fasterxml.jackson.dataformat.csv.CsvParser
-import com.fasterxml.jackson.dataformat.csv.CsvSchema
-import com.fasterxml.jackson.module.kotlin.KotlinModule
-import com.fasterxml.jackson.module.kotlin.readValue
-import software.amazon.awssdk.services.s3.S3Client
-import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.sns.SnsClient
 import software.amazon.awssdk.services.sns.model.MessageAttributeValue
 import software.amazon.awssdk.services.sns.model.PublishRequest
 import java.io.InputStream
-import java.lang.management.ManagementFactory
 import java.util.*
 
 /**
@@ -26,17 +17,16 @@ import java.util.*
 class SkuProductCsvHandler: RequestHandler<SNSEvent,Unit> {
     private val jsonMapper = createJsonMapper()
     private val csvResources = createCsvMapper()
-    private val s3 = S3Client.builder().build()
-    private val sns = SnsClient.builder().build()
+    private val s3 = s3Client()
+    private val sns = snsClient()
     private val capacity = 256
     private val maximumPayloadSize = 256_000
-    private val topicArn: String = Optional.ofNullable(System.getenv("TOPIC_ARN")).orElseThrow { IllegalStateException("TOPIC_ARN was not provided!") }
+    private val topicArn = loadEnvironmentVariable( "TOPIC_ARN" )
 
     override fun handleRequest(input: SNSEvent, context: Context) {
         dumpJvmSettings(context)
         input.records.forEach { record ->
-            dumpMessageAttributes(record, context)
-            val event = toChangeEvent(record, context)
+            val event = toChangeEvent(record, context, jsonMapper)
 
             var counter = 0
             var totalLength = 0
@@ -76,12 +66,6 @@ class SkuProductCsvHandler: RequestHandler<SNSEvent,Unit> {
         }
     }
 
-    private fun toChangeEvent(record: SNSEvent.SNSRecord, context: Context): S3ChangeEvent {
-        val event = jsonMapper.readValue<S3ChangeEvent>(record.sns.message)
-        context.logger.log("Just heard $event")
-        return event
-    }
-
     private fun publishMessage(mapper: ObjectMapper, data: SkuProductRowHolder, context: Context, sns: SnsClient, routingKey: String ) {
         val value = MessageAttributeValue.builder().dataType("String").stringValue(routingKey).build()
         val message = mapper.writeValueAsString(data)
@@ -99,51 +83,9 @@ class SkuProductCsvHandler: RequestHandler<SNSEvent,Unit> {
         }
     }
 
-    private fun dumpJvmSettings(context: Context) {
-        val runtimeMxBean = ManagementFactory.getRuntimeMXBean()
-        val arguments = runtimeMxBean.inputArguments
-        arguments.forEach {
-            context.logger.log(it)
-        }
-    }
-
     private fun toRows(resources: CsvResources, stream: InputStream): MappingIterator<SkuProductRow> {
         val reader = resources.mapper.readerFor(SkuProductRow::class.java).with(resources.schema)
         return reader.readValues(stream)
-    }
-
-    private fun dumpMessageAttributes(snsRecord: SNSEvent.SNSRecord, context: Context) {
-        snsRecord.sns.messageAttributes.forEach { t, u ->
-            context.logger.log("$t = $u")
-        }
-    }
-
-    private fun downloadFile(event: S3ChangeEvent, context: Context, s3: S3Client): InputStream {
-        val region = event.region
-        val bucket = event.bucket
-        val key = event.key
-        context.logger.log("Initiating download from S3: region = $region, bucket = $bucket, key = $key")
-
-        val objectRequest = GetObjectRequest.builder().bucket(bucket).key(key).build()
-        val response = s3.getObject(objectRequest)
-        context.logger.log("Just download $bucket/$key which was ${response.response().contentLength()} bytes long.")
-        return response.buffered( 512 * 1024 )
-    }
-
-    data class CsvResources(val mapper: CsvMapper, val schema: CsvSchema)
-
-    private fun createCsvMapper(): CsvResources {
-        val csvMapper = CsvMapper()
-        csvMapper.enable(CsvParser.Feature.SKIP_EMPTY_LINES)
-        csvMapper.enable(CsvParser.Feature.TRIM_SPACES)
-        val schema = CsvSchema.emptySchema().withHeader()
-        return CsvResources( csvMapper, schema )
-    }
-
-    private fun createJsonMapper(): ObjectMapper {
-        val mapper = ObjectMapper().registerModule(KotlinModule())
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-        return mapper
     }
 }
 
