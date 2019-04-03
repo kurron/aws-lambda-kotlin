@@ -3,10 +3,6 @@ package org.kurron.aws.lambda
 import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.RequestHandler
 import com.amazonaws.services.lambda.runtime.events.SQSEvent
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.KotlinModule
-import com.fasterxml.jackson.module.kotlin.readValue
 import org.apache.commons.codec.digest.DigestUtils
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue
@@ -20,29 +16,23 @@ import java.util.*
  * Processes command messages by integrating with an external system and tracking the processing in DynamoDB.
  */
 class AlphaCommandHandler: RequestHandler<SQSEvent, Unit> {
-    private val jsonMapper = createJsonMapper()
     private val dynamoDB = DynamoDbClient.builder().build()
     private val tableName = Optional.ofNullable(System.getenv("TABLE_NAME")).orElse( "TABLE NOT PROVIDED")
 
     override fun handleRequest(input: SQSEvent, context: Context) {
         dumpJvmSettings(context)
 
-
         // TODO: see if using streams instead of loops is more readable and/or efficient
         input.records.forEach { sqsRecord ->
-            context.logger.log( "Processing ${sqsRecord.body}")
-            val holder = jsonMapper.readValue<SkuProductRowHolder>(sqsRecord.body)
+            val json = sqsRecord.body
+            context.logger.log( "Processing $json")
+            val id = DigestUtils("SHA-1").digestAsHex(json)
+            context.logger.log( "Processing record $id from $sqsRecord.body")
 
-            holder.rows.forEach{ row ->
-                val rowAsJson = jsonMapper.writeValueAsString( row )
-                val id = DigestUtils( "SHA-1" ).digestAsHex( rowAsJson )
-                context.logger.log( "Processing record $id from $rowAsJson")
-
-                val version = loadRecord( context, dynamoDB, rowAsJson, tableName, id )
-                if ( version.isNotEmpty() ) {
-                    doWork( context )
-                    updateProgress( context, dynamoDB, tableName, id, version )
-                }
+            val version = loadRecord( context, dynamoDB, json, tableName, id )
+            if ( version.isNotEmpty() ) {
+                doWork( context )
+                updateProgress( context, dynamoDB, tableName, id, version )
             }
         }
         context.logger.log( "Processing complete.")
@@ -88,12 +78,6 @@ class AlphaCommandHandler: RequestHandler<SQSEvent, Unit> {
         arguments.forEach {
             context.logger.log(it)
         }
-    }
-
-    private fun createJsonMapper(): ObjectMapper {
-        val mapper = ObjectMapper().registerModule(KotlinModule())
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-        return mapper
     }
 
     /**
